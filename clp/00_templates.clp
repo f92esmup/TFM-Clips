@@ -100,3 +100,12 @@
 (deftemplate voto
    (slot accion (type SYMBOL) (allowed-symbols comprar reducir esperar))
 )
+;; ========================================================================
+;; 6. FUNCION GLOBAL DE EXTRACCION
+;; ========================================================================
+(deffunction obtener-voto ()
+   (do-for-fact ((?v voto)) TRUE
+      (return ?v:accion)
+   )
+   (return esperar)
+)

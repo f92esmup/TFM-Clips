@@ -1,29 +1,29 @@
 ;; ========================================================================
-;; MÓDULO DECISION: GENERACIÓN DEL VOTO DEL AGENTE
+;; MÃ“DULO DECISION: GENERACIÃ“N DEL VOTO DEL AGENTE
 ;; ========================================================================
-;; FUNCIÓN:
-;; Cruza las dimensiones del Régimen de Mercado (Macro) con la topología 
-;; de la Acción del Precio (Micro) para tomar una decisión operativa.
+;; FUNCIÃ“N:
+;; Cruza las dimensiones del RÃ©gimen de Mercado (Macro) con la topologÃ­a 
+;; de la AcciÃ³n del Precio (Micro) para tomar una decisiÃ³n operativa.
 ;; 
 ;; DEPENDENCIAS:
-;; - Requiere que los módulos MACRO y MICRO ya hayan sido ejecutados y 
+;; - Requiere que los mÃ³dulos MACRO y MICRO ya hayan sido ejecutados y 
 ;;   hayan asertado sus respectivos hechos.
-;; - MQL5 capturará el hecho 'voto' al finalizar la ejecución de este módulo
+;; - MQL5 capturarÃ¡ el hecho 'voto' al finalizar la ejecuciÃ³n de este mÃ³dulo
 ;;   para calcular el consenso global de los 100 agentes.
 ;; ========================================================================
 (defmodule DECISION (import MAIN ?ALL) (export ?ALL))
 
 
 ;; ========================================================================
-;; 1. ESCENARIOS DE COMPRA (ENTRADA / AUMENTO DE EXPOSICIÓN)
+;; 1. ESCENARIOS DE COMPRA (ENTRADA / AUMENTO DE EXPOSICIÃ“N)
 ;; ========================================================================
 
 (defrule decision-comprar-continuacion-alcista
-   "Condición: Tendencia alcista, con expansión de volatilidad (energía) 
-    y un patrón de acción del precio que confirma la dirección alcista."
+   "CondiciÃ³n: Tendencia alcista, con expansiÃ³n de volatilidad (energÃ­a) 
+    y un patrÃ³n de acciÃ³n del precio que confirma la direcciÃ³n alcista."
    (macroestado (dimension direccional) (condicion alcista))
    (macroestado (dimension volatilidad) (condicion alta))
-   ;; El operador 'or' permite agrupar múltiples patrones válidos
+   ;; El operador 'or' permite agrupar mÃºltiples patrones vÃ¡lidos
    (or (microestado (patron pin-bar) (direccion alcista))
        (microestado (patron envolvente) (direccion alcista)))
    =>
@@ -32,12 +32,12 @@
 
 
 ;; ========================================================================
-;; 2. ESCENARIOS DE REDUCCIÓN (TOMA DE BENEFICIOS / PROTECCIÓN)
+;; 2. ESCENARIOS DE REDUCCIÃ“N (TOMA DE BENEFICIOS / PROTECCIÃ“N)
 ;; ========================================================================
 
 (defrule decision-reducir-agotamiento-alcista
-   "Condición: El mercado presenta tensión alta (sobrecompra) y el precio 
-    forma un patrón de giro o ruptura estructural bajista."
+   "CondiciÃ³n: El mercado presenta tensiÃ³n alta (sobrecompra) y el precio 
+    forma un patrÃ³n de giro o ruptura estructural bajista."
    (macroestado (dimension momento) (condicion sobrecomprado))
    (or (microestado (patron pin-bar) (direccion bajista))
        (microestado (patron bos) (direccion bajista)))
@@ -46,8 +46,8 @@
 )
 
 (defrule decision-reducir-falta-liquidez
-   "Condición: El precio se ha alejado demasiado del VWAP (desequilibrio) 
-    y aparece una compresión de volatilidad (incertidumbre)."
+   "CondiciÃ³n: El precio se ha alejado demasiado del VWAP (desequilibrio) 
+    y aparece una compresiÃ³n de volatilidad (incertidumbre)."
    (macroestado (dimension liquidez) (condicion alejada))
    (microestado (patron inside-bar))
    =>
@@ -56,11 +56,11 @@
 
 
 ;; ========================================================================
-;; 3. ESCENARIOS DE ESPERA (INACCIÓN)
+;; 3. ESCENARIOS DE ESPERA (INACCIÃ“N)
 ;; ========================================================================
 
 (defrule decision-esperar-por-ruido
-   "Si el módulo MICRO no encontró estructura y asertó 'ruido', el agente 
+   "Si el mÃ³dulo MICRO no encontrÃ³ estructura y asertÃ³ 'ruido', el agente 
     no opera, sin importar lo que digan los indicadores macro."
    (microestado (patron ruido))
    =>
@@ -73,11 +73,23 @@
 ;; ========================================================================
 
 (defrule decision-esperar-por-defecto
-   "Regla de control: Si el mercado genera una combinación de macro y micro 
-    que no está contemplada en ninguna regla anterior de compra o reducción, 
-    el agente emite el voto de 'esperar' para evitar errores de ejecución."
-   (declare (salience -10)) ; Baja prioridad: se ejecuta en último lugar
+   "Regla de control: Si el mercado genera una combinaciÃ³n de macro y micro 
+    que no estÃ¡ contemplada en ninguna regla anterior de compra o reducciÃ³n, 
+    el agente emite el voto de 'esperar' para evitar errores de ejecuciÃ³n."
+   (declare (salience -10)) ; Baja prioridad: se ejecuta en Ãºltimo lugar
    (not (voto))             ; Verifica que no se haya emitido un voto antes
    =>
    (assert (voto (accion esperar)))
+)
+
+;; ========================================================================
+;; 5. FUNCIONES DE EXTRACCIÃ“N PARA MQL5
+;; ========================================================================
+
+(deffunction obtener-voto ()
+   "Extrae el valor del slot 'accion' del hecho 'voto'. Devuelve 'esperar' si no lo encuentra."
+   (do-for-fact ((?v voto)) TRUE
+      (return ?v:accion)
+   )
+   (return esperar)
 )

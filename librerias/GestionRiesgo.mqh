@@ -1,4 +1,4 @@
-﻿//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 //|                                                GestionRiesgo.mqh |
 //|                                  Copyright 2026, Pedro Escudero. |
 //+------------------------------------------------------------------+
@@ -22,6 +22,7 @@ class CRiskManager
   {
 private:
    ENUM_AGENT_VOTE   m_votes[100];      // Memoria de los 100 agentes
+   int               m_current_level;   // Nivel de riesgo actualmente activo
    
    // --- Hiperparámetros Optimizables ---
    // Umbrales de votos (0 a 100)
@@ -45,7 +46,7 @@ public:
                     ~CRiskManager(void) {}
 
    void              UpdateAgentVote(int agent_id, string vote_str);
-   STradeParams      GetTradeParams(double account_balance) const;
+   STradeParams      GetTradeParams(double account_balance);
   };
 
 //+------------------------------------------------------------------+
@@ -61,6 +62,7 @@ CRiskManager::CRiskManager(int t1, int t2, int t3, double base_risk, double risk
    m_ratio_1 = r1;
    m_ratio_2 = r2;
    m_ratio_3 = r3;
+   m_current_level = 0;
    
    for(int i = 0; i < 100; i++) 
       m_votes[i] = VOTE_WAIT;
@@ -81,7 +83,7 @@ void CRiskManager::UpdateAgentVote(int agent_id, string vote_str)
 //+------------------------------------------------------------------+
 //| Motor de Decisión: Evalúa el conteo y asigna riesgo/ratio        |
 //+------------------------------------------------------------------+
-STradeParams CRiskManager::GetTradeParams(double balance) const
+STradeParams CRiskManager::GetTradeParams(double balance)
   {
    STradeParams params = {0.0, 0.0};
    
@@ -97,20 +99,40 @@ STradeParams CRiskManager::GetTradeParams(double balance) const
    
    int net_votes = buy_votes - reduce_votes;
    
-   // 2. Asignación por Niveles de Certeza
-   if(net_votes >= m_thr_level_3)      
+   // 2. Asignación por Niveles de Certeza con Histéresis
+   int target_level = 0;
+   
+   if(net_votes >= m_thr_level_3) target_level = 3;
+   else if(net_votes >= m_thr_level_2) target_level = 2;
+   else if(net_votes >= m_thr_level_1) target_level = 1;
+   
+   // Histéresis: Exige caer 10 votos por debajo del umbral para perder el nivel actual
+   if(target_level < m_current_level)
+     {
+      int required_drop = 0;
+      if(m_current_level == 3) required_drop = m_thr_level_3 - 10;
+      else if(m_current_level == 2) required_drop = m_thr_level_2 - 10;
+      else if(m_current_level == 1) required_drop = m_thr_level_1 - 10;
+      
+      if(net_votes >= required_drop)
+         target_level = m_current_level; // Mantener nivel por inercia
+     }
+     
+   m_current_level = target_level;
+   
+   if(m_current_level == 3)      
      { 
       // Nivel Máximo: Riesgo Base + (2 * Incremento)
       params.risk_amount = balance * ((m_base_risk + (2.0 * m_risk_increment)) / 100.0); 
       params.take_profit_ratio = m_ratio_3; 
      }
-   else if(net_votes >= m_thr_level_2) 
+   else if(m_current_level == 2) 
      { 
       // Nivel Medio: Riesgo Base + Incremento
       params.risk_amount = balance * ((m_base_risk + m_risk_increment) / 100.0); 
       params.take_profit_ratio = m_ratio_2; 
      }
-   else if(net_votes >= m_thr_level_1) 
+   else if(m_current_level == 1) 
      { 
       // Nivel Base: Riesgo Base
       params.risk_amount = balance * (m_base_risk / 100.0); 

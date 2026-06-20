@@ -1,4 +1,4 @@
-﻿//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 //|                                           test_gestionriesgo.mq5 |
 //+------------------------------------------------------------------+
 #property strict
@@ -57,9 +57,21 @@ void OnStart()
    params = riesgo.GetTradeParams(balance);
    Check("6. Votos bajistas cancelan alcistas (Neto 40 cae a Nivel 1)", params.risk_amount == 100.0 && params.take_profit_ratio == 2.0);
    
-   // Test 7: Datos ignorados
+   // Test 7: Histéresis (Mantener nivel por inercia)
+   // Reseteamos y subimos a Nivel 2 (T2=50)
+   for(int i = 0; i < 100; i++) riesgo.UpdateAgentVote(i, "esperar");
+   for(int i = 0; i < 55; i++) riesgo.UpdateAgentVote(i, "comprar");
+   params = riesgo.GetTradeParams(balance); // Activa Nivel 2
+   
+   // Bajamos a 45 votos netos. T2=50, pero la tolerancia es T2-10 = 40.
+   // Como 45 >= 40, debe mantener el Nivel 2 por inercia.
+   for(int i = 45; i < 55; i++) riesgo.UpdateAgentVote(i, "esperar");
+   params = riesgo.GetTradeParams(balance);
+   Check("7. Histéresis mantiene Nivel 2 al caer a 45 (Tolerancia 40)", params.risk_amount == 150.0 && params.take_profit_ratio == 3.0);
+   
+   // Test 8: Datos ignorados
    riesgo.UpdateAgentVote(101, "comprar");
-   params = riesgo.GetTradeParams(balance); // Faltaba actualizar la variable
-   Check("7. Votos fuera de rango (ID 101) son ignorados", params.risk_amount == 100.0);
+   params = riesgo.GetTradeParams(balance); 
+   Check("8. Votos fuera de rango (ID 101) son ignorados", params.risk_amount == 150.0);
    }
 //+------------------------------------------------------------------+

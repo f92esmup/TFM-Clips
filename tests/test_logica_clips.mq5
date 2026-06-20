@@ -1,10 +1,10 @@
-﻿//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 //|                                           test_logica_clips.mq5  |
 //|                                  Copyright 2026, Pedro Escudero. |
 //+------------------------------------------------------------------+
 #property strict
 
-#include <clips.mqh>
+#include <tfm\clips.mqh>
 
 // Helper para ejecutar un escenario e imprimir el resultado
 void TestScenario(CClipsEngine &clips, string name, string facts, string expected)
@@ -14,7 +14,7 @@ void TestScenario(CClipsEngine &clips, string name, string facts, string expecte
    clips.Eval("(focus MACRO MICRO DECISION)"); 
    clips.Run(); 
    
-   string query = "(progn (bind ?res \"sin_voto\") (do-for-all-facts ((?v voto)) TRUE (bind ?res ?v:accion)) ?res)";
+   string query = "(obtener-voto)";
    string result = clips.GetStr(query);
    
    string status = (result == expected) ? "PASS" : "FAIL";

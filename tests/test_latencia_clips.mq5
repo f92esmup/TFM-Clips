@@ -1,10 +1,10 @@
-﻿//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 //|                                        test_latencia_clips.mq5   |
 //|                                  Copyright 2026, Pedro Escudero. |
 //+------------------------------------------------------------------+
 #property strict
 
-#include <clips.mqh>
+#include <tfm\clips.mqh>
 
 void OnStart()
   {
@@ -49,9 +49,8 @@ void OnStart()
       clips.Eval("(focus MACRO MICRO DECISION)"); 
       clips.Run(); 
       
-      // Extraemos el voto para forzar el ciclo completo de lectura
-      string query = "(progn (bind ?res \"sin_voto\") (do-for-all-facts ((?v voto)) TRUE (bind ?res ?v:accion)) ?res)";
-      string result = clips.GetStr(query);
+      // Extraemos el voto usando la nueva deffunction
+      string result = clips.GetStr("(obtener-voto)");
      }
      
    // Marcamos el tiempo final
@@ -75,5 +74,28 @@ void OnStart()
      {
       Print("VEREDICTO: Latencia BAJA. El bucle estándar síncrono es seguro.");
      }
+     
+   Print("==================================================");
+   Print("Buscando el número óptimo de agentes por tick (Presupuesto: 1.0 ms)...");
+   
+   int optimal_agents = 0;
+   ulong budget_start = GetMicrosecondCount();
+   ulong elapsed = 0;
+   
+   while(elapsed < 1000) // 1000 microsegundos = 1 milisegundo
+     {
+      clips.Reset(); 
+      clips.Eval(facts); 
+      clips.Eval("(focus MACRO MICRO DECISION)"); 
+      clips.Run(); 
+      clips.GetStr("(obtener-voto)");
+      
+      optimal_agents++;
+      elapsed = GetMicrosecondCount() - budget_start;
+     }
+     
+   PrintFormat("RECOMENDACIÓN: %d agentes procesados en %.3f ms.", optimal_agents, elapsed / 1000.0);
+   PrintFormat("-> Configura InpMaxAgentsPerTick = %d para mantener MT5 fluido.", optimal_agents);
+   Print("==================================================");
   }
 //+------------------------------------------------------------------+

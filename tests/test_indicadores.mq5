@@ -1,9 +1,9 @@
-﻿//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 //|                                             test_indicadores.mq5 |
 //+------------------------------------------------------------------+
 #property strict
-#include "velas.mqh"
-#include "Indicadores.mqh"
+#include <tfm\velas.mqh>
+#include <tfm\Indicadores.mqh>
 
 void Check(string name, bool condition)
   {
@@ -46,5 +46,20 @@ void OnStart()
    rsi.CalculateOnClose();
    double crash_val = rsi.GetValue();
    Check("5. RSI reacciona a caída severa de precio", crash_val < 100.0 && crash_val > 0.0);
+   
+   // Test 6: ATR (Average True Range)
+   CAtrCustom atr(&feed, 14);
+   for(int i = 0; i < 15; i++) { feed.UpdateTick(1.1000 + (i*0.0010), 10); atr.CalculateOnClose(); }
+   Check("6. ATR se activa correctamente tras el período", atr.IsReady() == true);
+   
+   // Test 7: ALMA (Pendiente de la Media Múltiple)
+   CAlmaCustom alma(&feed, 9);
+   for(int i = 0; i < 10; i++) { feed.UpdateTick(1.1000 + (i*0.0010), 10); alma.CalculateOnClose(); }
+   Check("7. ALMA calcula pendiente positiva en tendencia pura", alma.GetValue() > 0.0);
+   
+   // Test 8: VWAP (Desviación porcentual del precio)
+   CVwapCustom vwap(&feed, 50);
+   for(int i = 0; i < 55; i++) { feed.UpdateTick(1.1000, 10); vwap.CalculateOnClose(); }
+   Check("8. VWAP calcula desviación 0.0 en un mercado totalmente plano", vwap.IsReady() == true && vwap.GetValue() == 0.0);
   }
 //+------------------------------------------------------------------+
