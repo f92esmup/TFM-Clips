@@ -1,4 +1,4 @@
-﻿//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 //|                                                     Ensamble.mqh |
 //|                                  Copyright 2026, Pedro Escudero. |
 //+------------------------------------------------------------------+
@@ -91,6 +91,22 @@ void CEnsembleManager::InitializeEnsemble(void)
   {
    // Fijamos una semilla para asegurar la replicabilidad de los backtests
    MathSrand(123456); 
+   
+   // Calibración base para EURUSD según el Feed (0 al 15)
+   // TIEMPO (0-3), TICKS (4-7), VOLUMEN (8-11), RANGO (12-15)
+   double base_atr[16] = {
+      0.0005, 0.0015, 0.0030, 0.0080, // Tiempo: M5, H1, H4, D1
+      0.0002, 0.0008, 0.0015, 0.0030, // Ticks: 100, 1500, 6000, 24000
+      0.0005, 0.0015, 0.0030, 0.0080, // Volumen: 500, 5000, 20k, 80k
+      0.0005, 0.0020, 0.0050, 0.0150  // Rango: 50pts, 200pts, 500pts, 1500pts
+   };
+   
+   double base_alma[16] = {
+      0.00002, 0.00010, 0.00025, 0.00080, // Tiempo
+      0.00001, 0.00005, 0.00010, 0.00025, // Ticks
+      0.00002, 0.00010, 0.00025, 0.00080, // Volumen
+      0.00002, 0.00010, 0.00025, 0.00080  // Rango
+   };
 
    for(int i = 0; i < 100; i++)
      {
@@ -100,14 +116,17 @@ void CEnsembleManager::InitializeEnsemble(void)
       m_agents[i].feed_id = i % 16; 
       
       // ===========================================================
-      // FASE MACRO: Umbrales Dinámicos
+      // FASE MACRO: Umbrales Dinámicos (Escalados por Feed)
       // ===========================================================
+      int f = m_agents[i].feed_id;
       m_agents[i].rsi_sobrecompra = MathRandomNormal(70.0, 3.5);  
       m_agents[i].rsi_sobreventa  = MathRandomNormal(30.0, 3.5);  
-      m_agents[i].atr_expansion   = MathRandomNormal(1.8, 0.25);
-      m_agents[i].atr_contraccion = MathRandomNormal(0.7, 0.08);
-      m_agents[i].vwap_desviacion = MathRandomNormal(2.0, 0.4);
-      m_agents[i].alma_pendiente  = MathRandomNormal(0.001, 0.0002);
+      m_agents[i].vwap_desviacion = MathRandomNormal(0.15, 0.05); // Constante % para todos los feeds
+      
+      // La volatilidad y pendiente dependen 100% de la temporalidad a la que se asigne el agente
+      m_agents[i].atr_expansion   = MathRandomNormal(base_atr[f], base_atr[f] * 0.2); 
+      m_agents[i].atr_contraccion = MathRandomNormal(base_atr[f] * 0.5, base_atr[f] * 0.1); 
+      m_agents[i].alma_pendiente  = MathRandomNormal(base_alma[f], base_alma[f] * 0.2);
       
       // Restricciones lógicas de seguridad (Clamping)
       if(m_agents[i].rsi_sobrecompra > 85.0) m_agents[i].rsi_sobrecompra = 85.0;

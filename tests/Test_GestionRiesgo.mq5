@@ -14,10 +14,10 @@ void OnStart()
    Print("=== INICIANDO TESTS: GestionRiesgo (Conteo Democrático) ===");
    
    // Configuramos el gestor con los siguientes parámetros de test:
-   // Umbrales: T1=20, T2=50, T3=80
+   // Umbrales: Base=20, Step=30 (T1=20, T2=50, T3=80), Hysteresis=10
    // Riesgo: Base 1.0%, Incremento 0.5% (Niveles: 1.0%, 1.5%, 2.0%)
    // Ratios: R1=2.0, R2=3.0, R3=4.0
-   CRiskManager riesgo(20, 50, 80, 1.0, 0.5, 2.0, 3.0, 4.0);
+   CRiskManager riesgo(20, 30, 10, 1.0, 0.5, 2.0, 3.0, 4.0);
    
    double balance = 10000.0;
    STradeParams params;
@@ -73,5 +73,8 @@ void OnStart()
    riesgo.UpdateAgentVote(101, "comprar");
    params = riesgo.GetTradeParams(balance); 
    Check("8. Votos fuera de rango (ID 101) son ignorados", params.risk_amount == 150.0);
+   
+   // Test 9: Getters para el HUD
+   Check("9. GetNetVotes y GetCurrentLevel funcionan correctamente", riesgo.GetNetVotes() == 45 && riesgo.GetCurrentLevel() == 2);
    }
 //+------------------------------------------------------------------+

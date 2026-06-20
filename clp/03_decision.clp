@@ -31,6 +31,23 @@
 )
 
 
+(defrule decision-comprar-ruptura-estructural
+   "Condicion: Tendencia alcista fuerte que acaba de generar una ruptura estructural (BoS) alcista."
+   (macroestado (dimension direccional) (condicion alcista))
+   (microestado (patron bos) (direccion alcista))
+   =>
+   (assert (voto (accion comprar)))
+)
+
+(defrule decision-comprar-rebote-sobrevendido
+   "Condicion: El mercado esta sobrevendido y en zona de liquidez, y un patron alcista sugiere el rebote."
+   (macroestado (dimension momento) (condicion sobrevendido))
+   (macroestado (dimension liquidez) (condicion alejada))
+   (or (microestado (patron pin-bar) (direccion alcista))
+       (microestado (patron envolvente) (direccion alcista)))
+   =>
+   (assert (voto (accion comprar)))
+)
 ;; ========================================================================
 ;; 2. ESCENARIOS DE REDUCCIÓN (TOMA DE BENEFICIOS / PROTECCIÓN)
 ;; ========================================================================
@@ -55,6 +72,40 @@
 )
 
 
+(defrule decision-comprar-acumulacion
+   "Condicion: El mercado consolida con baja volatilidad (Inside Bar) pero la tendencia de fondo es alcista. Indica acumulacion antes de explotar."
+   (macroestado (dimension direccional) (condicion alcista))
+   (macroestado (dimension volatilidad) (condicion baja))
+   (microestado (patron inside-bar))
+   =>
+   (assert (voto (accion comprar)))
+)
+
+(defrule decision-comprar-fuerza-bruta
+   "Condicion: Todo a favor. Tendencia alcista, alta volatilidad y el RSI NO esta sobrecomprado."
+   (macroestado (dimension direccional) (condicion alcista))
+   (macroestado (dimension volatilidad) (condicion alta))
+   (not (macroestado (dimension momento) (condicion sobrecomprado)))
+   (or (microestado (patron bos) (direccion alcista))
+       (microestado (patron envolvente) (direccion alcista)))
+   =>
+   (assert (voto (accion comprar)))
+)
+
+(defrule decision-reducir-cambio-tendencia
+   "Condicion: El ALMA ha girado a la baja de forma agresiva. Regla de proteccion pura."
+   (macroestado (dimension direccional) (condicion bajista))
+   =>
+   (assert (voto (accion reducir)))
+)
+
+(defrule decision-reducir-freno-volatilidad
+   "Condicion: El mercado se ha quedado sin energia (ATR bajo) estando sobrecomprado."
+   (macroestado (dimension volatilidad) (condicion baja))
+   (macroestado (dimension momento) (condicion sobrecomprado))
+   =>
+   (assert (voto (accion reducir)))
+)
 ;; ========================================================================
 ;; 3. ESCENARIOS DE ESPERA (INACCIÓN)
 ;; ========================================================================

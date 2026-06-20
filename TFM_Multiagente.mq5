@@ -19,17 +19,18 @@
 #include <Trade\Trade.mqh>
 
 // ========================================================================
-// HIPERPARÁMETROS
+// PARÁMETROS DE ENTRADA (Inputs)
 // ========================================================================
-input int    InpThrLevel1 = 60;        
-input int    InpThrLevel2 = 75;        
-input int    InpThrLevel3 = 90;        
-input double InpBaseRisk  = 0.5;       
-input double InpRiskInc   = 0.5;       
-input double InpRatio1    = 2.0;       
-input double InpRatio2    = 3.0;       
-input double InpRatio3    = 4.0;       
+input int    InpThrBase     = 3;   // Umbral Base Nivel 1 (Votos Netos)
+input int    InpThrStep     = 3;   // Incremento de Votos por Nivel
+input int    InpHysteresis  = 2;   // Histéresis (Tolerancia anti-comisiones)
 
+input double InpBaseRisk    = 0.5; // Riesgo Base Nivel 1 (%)
+input double InpRiskInc     = 0.5; // Incremento por Nivel (%)
+
+input double InpRatio1      = 2.0; // Ratio TP/SL Nivel 1
+input double InpRatio2      = 3.0; // Ratio TP/SL Nivel 2
+input double InpRatio3      = 4.0; // Ratio TP/SL Nivel 3
 // Filtro de Volatilidad (ATR Ancla en H1)
 input int    InpAtrPeriod = 14;        
 input double InpAtrMultiplier = 1.5;   
@@ -59,7 +60,7 @@ int               AtrHandle; // Ancla nativa de MT5
 // ========================================================================
 int OnInit()
   {
-   GestorRiesgo = new CRiskManager(InpThrLevel1, InpThrLevel2, InpThrLevel3, InpBaseRisk, InpRiskInc, InpRatio1, InpRatio2, InpRatio3);
+   GestorRiesgo = new CRiskManager(InpThrBase, InpThrStep, InpHysteresis, InpBaseRisk, InpRiskInc, InpRatio1, InpRatio2, InpRatio3);
    Ensamble.InitializeEnsemble();
 
    string path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL5\\Files\\";
@@ -99,6 +100,9 @@ void OnDeinit(const int reason)
       delete VWAP[i];
      }
    IndicatorRelease(AtrHandle);
+   
+   for(int i=0; i<10; i++) ObjectDelete(0, "HUD_LINE_" + IntegerToString(i));
+   Comment("");
   }
 
 // ========================================================================
@@ -145,6 +149,7 @@ void OnTick()
       
       Clips.Reset();
       Clips.Eval("(assert " + hecho_adn + " " + hecho_datos + ")"); 
+      Clips.Eval("(focus MACRO MICRO DECISION)"); // <--- EL ESMERILADO MÁGICO: Sin esto los submódulos nunca se ejecutaban
       Clips.Run();
       
       string voto = Clips.GetStr("(obtener-voto)"); 
@@ -154,9 +159,18 @@ void OnTick()
       procesados++;
      }
 
-   // 3. MOTOR DE EJECUCIÓN (NETTING)
-   // Solo ejecutamos netting cuando toda la cola se haya vaciado en este tick
-   if(hubo_actualizacion && ColaTareas.IsEmpty())
+   // ========================================================================
+   // 3. VERIFICACIÓN DE ESTADO (CALENTAMIENTO)
+   // ========================================================================
+   int required_bars = InpHistorySize; // VWAP necesita InpHistorySize velas
+   int current_bars = Feeds[15].GetAvailableBars(); // Miramos el feed más lento
+   bool is_system_ready = (current_bars >= required_bars);
+
+   // ========================================================================
+   // 4. MOTOR DE EJECUCIÓN (NETTING)
+   // ========================================================================
+   // Solo ejecutamos si el sistema está caliente, hubo actualización y la cola está vacía
+   if(is_system_ready && hubo_actualizacion && ColaTareas.IsEmpty())
      {
       double balance = AccountInfoDouble(ACCOUNT_BALANCE);
       STradeParams params = GestorRiesgo.GetTradeParams(balance);
@@ -175,12 +189,18 @@ void OnTick()
          target_lot = params.risk_amount / (sl_dist * (tick_value / tick_size));
         }
 
-      // 2. Leer Exposición Actual
+      // 2. Leer Exposición Actual (Soporte Multi-Ticket para Hedging)
       double current_lot = 0.0;
-      if(PositionSelect(_Symbol))
+      for(int i = 0; i < PositionsTotal(); i++)
         {
-         current_lot = PositionGetDouble(POSITION_VOLUME);
-         if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL) current_lot = -current_lot;
+         ulong ticket = PositionGetTicket(i);
+         if(PositionGetString(POSITION_SYMBOL) == _Symbol)
+           {
+            if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
+               current_lot -= PositionGetDouble(POSITION_VOLUME);
+            else
+               current_lot += PositionGetDouble(POSITION_VOLUME);
+           }
         }
 
       // 3. Normalizar
@@ -188,19 +208,89 @@ void OnTick()
       target_lot = MathFloor(target_lot / vol_step) * vol_step;
       double lot_delta = target_lot - current_lot;
 
-      // 4. Ejecutar Scale-In / Scale-Out
+      // 4. Ejecutar Scale-In / Scale-Out (Compatible con Hedging)
       if(MathAbs(lot_delta) >= SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN))
         {
+         PrintFormat(">>> INTENTO EJECUCIÓN: Consenso=%d | NivelRiesgo=%d | LoteDeseado=%.2f | LoteActual=%.2f | Delta=%.2f | SL_pips=%.1f", 
+                     GestorRiesgo.GetNetVotes(), GestorRiesgo.GetCurrentLevel(), target_lot, current_lot, lot_delta, sl_dist / SymbolInfoDouble(_Symbol, SYMBOL_POINT));
+         
          if(lot_delta > 0)
            {
+            // SCALE-IN
             double tp_price = ask + (sl_dist * params.take_profit_ratio);
-            Trade.Buy(lot_delta, _Symbol, ask, bid - sl_dist, tp_price, "MultiAgente: Comprar");
+            if(!Trade.Buy(lot_delta, _Symbol, ask, bid - sl_dist, tp_price, "MultiAgente: Scale-In"))
+               Print("!!! ERROR EN TRADE.BUY: ", GetLastError(), " | SL=", bid - sl_dist, " TP=", tp_price);
+            else
+               Print(">>> SCALE-IN COMPLETADO: ", lot_delta, " lotes.");
            }
          else if(lot_delta < 0)
            {
-            Trade.Sell(MathAbs(lot_delta), _Symbol, bid, 0, 0, "MultiAgente: Reducir");
+            // SCALE-OUT / CLOSE
+            Print(">>> INICIANDO SCALE-OUT. Cerrando tickets antiguos...");
+            for(int i = PositionsTotal() - 1; i >= 0; i--)
+              {
+               ulong ticket = PositionGetTicket(i);
+               if(PositionGetString(POSITION_SYMBOL) == _Symbol) 
+                 {
+                  if(!Trade.PositionClose(ticket))
+                     Print("!!! ERROR AL CERRAR TICKET ", ticket, " Error: ", GetLastError());
+                 }
+              }
+            
+            if(target_lot > 0)
+              {
+               double tp_price = ask + (sl_dist * params.take_profit_ratio);
+               if(!Trade.Buy(target_lot, _Symbol, ask, bid - sl_dist, tp_price, "MultiAgente: Scale-Out Sync"))
+                  Print("!!! ERROR EN RECOMPRA SCALE-OUT: ", GetLastError());
+               else
+                  Print(">>> RECOMPRA SCALE-OUT COMPLETADA: ", target_lot, " lotes.");
+              }
            }
         }
      }
-  }
+      
+    // ========================================================================
+    // 5. HUD (PANEL DE VISUALIZACIÓN EN GRÁFICO INFERIOR IZQUIERDO)
+    // ========================================================================
+    string status_msg = is_system_ready ? "[ONLINE] LISTO PARA OPERAR" : StringFormat("[LOAD] RECOPILANDO DATOS (%d/%d)", current_bars, required_bars);
+
+    double exposure = 0.0;
+    if(PositionSelect(_Symbol))
+      {
+       exposure = PositionGetDouble(POSITION_VOLUME);
+       if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL) exposure = -exposure;
+      }
+      
+    int v_buy, v_reduce, v_wait;
+    GestorRiesgo.GetVoteCounts(v_buy, v_reduce, v_wait);
+      
+    string lineas[9];
+    lineas[0] = "=================================================";
+    lineas[1] = "            CEREBRO MULTIAGENTE TFM              ";
+    lineas[2] = "=================================================";
+    lineas[3] = StringFormat(" Estado: %s", status_msg);
+    lineas[4] = "-------------------------------------------------";
+    lineas[5] = StringFormat(" Votos: [⬆️ Comprar: %02d | ⬇️ Reducir: %02d | ⏸️ Esperar: %02d]", v_buy, v_reduce, v_wait);
+    lineas[6] = StringFormat(" Consenso Neto: %+d votos", GestorRiesgo.GetNetVotes());
+    lineas[7] = StringFormat(" Nivel Riesgo: %d | Lotes Exposición: %.2f", GestorRiesgo.GetCurrentLevel(), exposure);
+    lineas[8] = "=================================================";
+    
+    for(int i=0; i<9; i++)
+      {
+       string obj_name = "HUD_LINE_" + IntegerToString(i);
+       if(ObjectFind(0, obj_name) < 0)
+         {
+          ObjectCreate(0, obj_name, OBJ_LABEL, 0, 0, 0);
+          ObjectSetInteger(0, obj_name, OBJPROP_CORNER, CORNER_LEFT_LOWER);
+          ObjectSetInteger(0, obj_name, OBJPROP_XDISTANCE, 20);
+          // La línea 0 es la superior del bloque, la 8 es la más baja.
+          ObjectSetInteger(0, obj_name, OBJPROP_YDISTANCE, 20 + (9 - i - 1) * 15);
+          ObjectSetString(0, obj_name, OBJPROP_FONT, "Courier New");
+          ObjectSetInteger(0, obj_name, OBJPROP_FONTSIZE, 10);
+          ObjectSetInteger(0, obj_name, OBJPROP_COLOR, clrLime);
+          ObjectSetInteger(0, obj_name, OBJPROP_BACK, false);
+         }
+       ObjectSetString(0, obj_name, OBJPROP_TEXT, lineas[i]);
+      }
+   }
 //+------------------------------------------------------------------+

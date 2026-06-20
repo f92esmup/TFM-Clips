@@ -26,9 +26,10 @@ private:
    
    // --- Hiperparámetros Optimizables ---
    // Umbrales de votos (0 a 100)
-   int               m_thr_level_1;
-   int               m_thr_level_2;
-   int               m_thr_level_3;
+   int               m_thr_level1;
+   int               m_thr_level2;
+   int               m_thr_level3;
+   int               m_hysteresis;
    
    // Riesgo (% del balance)
    double            m_base_risk;       // Ej: 0.5%
@@ -40,28 +41,35 @@ private:
    double            m_ratio_3;         // Ej: 4.0
 
 public:
-                     CRiskManager(int t1, int t2, int t3, 
-                                  double base_risk, double risk_inc, 
-                                  double r1, double r2, double r3);
+                     CRiskManager(int thr_base, int thr_step, int hysteresis,
+                                  double risk_base, double risk_inc,
+                                  double ratio1, double ratio2, double ratio3);
                     ~CRiskManager(void) {}
 
    void              UpdateAgentVote(int agent_id, string vote_str);
    STradeParams      GetTradeParams(double account_balance);
+   
+   int               GetNetVotes() const;
+   void              GetVoteCounts(int &out_buy, int &out_reduce, int &out_wait) const;
+   int               GetCurrentLevel() const { return m_current_level; }
   };
 
 //+------------------------------------------------------------------+
-//| Constructor: Recibe todos los parámetros para optimización       |
+//| Constructor                                                      |
 //+------------------------------------------------------------------+
-CRiskManager::CRiskManager(int t1, int t2, int t3, double base_risk, double risk_inc, double r1, double r2, double r3)
+CRiskManager::CRiskManager(int thr_base, int thr_step, int hysteresis,
+                           double risk_base, double risk_inc,
+                           double ratio1, double ratio2, double ratio3)
   {
-   m_thr_level_1 = t1;
-   m_thr_level_2 = t2;
-   m_thr_level_3 = t3;
-   m_base_risk = base_risk;
+   m_thr_level1 = thr_base;
+   m_thr_level2 = thr_base + thr_step;
+   m_thr_level3 = thr_base + (thr_step * 2);
+   m_hysteresis = hysteresis;
+   m_base_risk = risk_base;
    m_risk_increment = risk_inc;
-   m_ratio_1 = r1;
-   m_ratio_2 = r2;
-   m_ratio_3 = r3;
+   m_ratio_1 = ratio1;
+   m_ratio_2 = ratio2;
+   m_ratio_3 = ratio3;
    m_current_level = 0;
    
    for(int i = 0; i < 100; i++) 
@@ -78,6 +86,37 @@ void CRiskManager::UpdateAgentVote(int agent_id, string vote_str)
    if(vote_str == "comprar")      m_votes[agent_id] = VOTE_BUY;
    else if(vote_str == "reducir") m_votes[agent_id] = VOTE_REDUCE;
    else                           m_votes[agent_id] = VOTE_WAIT;
+  }
+
+//+------------------------------------------------------------------+
+//| Extrae el voto neto para propósitos de visualización (HUD)       |
+//+------------------------------------------------------------------+
+int CRiskManager::GetNetVotes() const
+  {
+   int buy_votes = 0;
+   int reduce_votes = 0;
+   for(int i = 0; i < 100; i++) 
+     {
+      if(m_votes[i] == VOTE_BUY) buy_votes++;
+      else if(m_votes[i] == VOTE_REDUCE) reduce_votes++;
+     }
+   return buy_votes - reduce_votes;
+  }
+
+//+------------------------------------------------------------------+
+//| Desglosa los votos totales por categoría para el HUD             |
+//+------------------------------------------------------------------+
+void CRiskManager::GetVoteCounts(int &out_buy, int &out_reduce, int &out_wait) const
+  {
+   out_buy = 0;
+   out_reduce = 0;
+   out_wait = 0;
+   for(int i = 0; i < 100; i++) 
+     {
+      if(m_votes[i] == VOTE_BUY) out_buy++;
+      else if(m_votes[i] == VOTE_REDUCE) out_reduce++;
+      else out_wait++;
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -102,20 +141,16 @@ STradeParams CRiskManager::GetTradeParams(double balance)
    // 2. Asignación por Niveles de Certeza con Histéresis
    int target_level = 0;
    
-   if(net_votes >= m_thr_level_3) target_level = 3;
-   else if(net_votes >= m_thr_level_2) target_level = 2;
-   else if(net_votes >= m_thr_level_1) target_level = 1;
-   
-   // Histéresis: Exige caer 10 votos por debajo del umbral para perder el nivel actual
-   if(target_level < m_current_level)
+   if(net_votes >= m_thr_level3) target_level = 3;
+   else if(net_votes >= m_thr_level2) target_level = 2;
+   else if(net_votes >= m_thr_level1) target_level = 1;
+   else
      {
-      int required_drop = 0;
-      if(m_current_level == 3) required_drop = m_thr_level_3 - 10;
-      else if(m_current_level == 2) required_drop = m_thr_level_2 - 10;
-      else if(m_current_level == 1) required_drop = m_thr_level_1 - 10;
-      
-      if(net_votes >= required_drop)
-         target_level = m_current_level; // Mantener nivel por inercia
+      // Histéresis controlada por el usuario para evitar overtrading
+      if(m_current_level == 3 && net_votes < (m_thr_level3 - m_hysteresis)) m_current_level = 2;
+      if(m_current_level == 2 && net_votes < (m_thr_level2 - m_hysteresis)) m_current_level = 1;
+      if(m_current_level == 1 && net_votes < (m_thr_level1 - m_hysteresis)) m_current_level = 0;
+      target_level = m_current_level;
      }
      
    m_current_level = target_level;

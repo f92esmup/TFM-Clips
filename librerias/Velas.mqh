@@ -1,4 +1,4 @@
-﻿//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 //|                                                        velas.mqh |
 //|                                  Copyright 2026, Pedro Escudero. |
 //+------------------------------------------------------------------+
@@ -41,6 +41,8 @@ public:
    
    // NUEVO: Traductor de datos para el motor experto
    string            GetClipsFacts(int window_size) const;
+   
+   int               GetAvailableBars() const;
   };
 
 CCustomFeed::CCustomFeed(int history_size, long ticks_per_candle)
@@ -105,8 +107,20 @@ string CCustomFeed::GetClipsFacts(int window_size) const
       if(GetCandle(i, temp_candle) && temp_candle.open != 0.0)
         {
          facts += StringFormat("(vela (id %d) (open %.5f) (high %.5f) (low %.5f) (close %.5f)) ",
-                               i, temp_candle.open, temp_candle.high, temp_candle.low, temp_candle.close);
+                               i - 1, temp_candle.open, temp_candle.high, temp_candle.low, temp_candle.close);
         }
      }
    return facts;
   }
+
+// --- CONTADOR DE VELAS DISPONIBLES ---
+int CCustomFeed::GetAvailableBars() const
+  {
+   int count = 0;
+   for(int i = 0; i < m_capacity; i++)
+     {
+      if(m_buffer[i].open != 0.0 || m_buffer[i].tick_count > 0) count++;
+     }
+   return count;
+  }
+//+------------------------------------------------------------------+
