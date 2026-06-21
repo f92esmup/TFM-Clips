@@ -9,8 +9,7 @@
 // ========================================================================
 struct STradeParams
   {
-   double            risk_amount;       // Dinero físico a arriesgar ($ o €)
-   double            take_profit_ratio; // Multiplicador para el TP (R)
+   double            risk_amount;       // Dinero a arriesgar (Lote dinámico)
   };
 
 enum ENUM_AGENT_VOTE { VOTE_BUY = 1, VOTE_REDUCE = -1, VOTE_WAIT = 0 };
@@ -33,17 +32,11 @@ private:
    
    // Riesgo (% del balance)
    double            m_base_risk;       // Ej: 0.5%
-   double            m_risk_increment;  // Ej: +0.5% por cada nivel
-   
-   // Ratios de recompensa (R)
-   double            m_ratio_1;         // Ej: 2.0
-   double            m_ratio_2;         // Ej: 3.0
-   double            m_ratio_3;         // Ej: 4.0
+   double            m_risk_increment;  // Ej: 0.5% extra por nivel
 
 public:
                      CRiskManager(int thr_base, int thr_step, int hysteresis,
-                                  double risk_base, double risk_inc,
-                                  double ratio1, double ratio2, double ratio3);
+                                  double risk_base, double risk_inc);
                     ~CRiskManager(void) {}
 
    void              UpdateAgentVote(int agent_id, string vote_str);
@@ -58,8 +51,7 @@ public:
 //| Constructor                                                      |
 //+------------------------------------------------------------------+
 CRiskManager::CRiskManager(int thr_base, int thr_step, int hysteresis,
-                           double risk_base, double risk_inc,
-                           double ratio1, double ratio2, double ratio3)
+                           double risk_base, double risk_inc)
   {
    m_thr_level1 = thr_base;
    m_thr_level2 = thr_base + thr_step;
@@ -67,9 +59,6 @@ CRiskManager::CRiskManager(int thr_base, int thr_step, int hysteresis,
    m_hysteresis = hysteresis;
    m_base_risk = risk_base;
    m_risk_increment = risk_inc;
-   m_ratio_1 = ratio1;
-   m_ratio_2 = ratio2;
-   m_ratio_3 = ratio3;
    m_current_level = 0;
    
    for(int i = 0; i < 100; i++) 
@@ -120,12 +109,10 @@ void CRiskManager::GetVoteCounts(int &out_buy, int &out_reduce, int &out_wait) c
   }
 
 //+------------------------------------------------------------------+
-//| Motor de Decisión: Evalúa el conteo y asigna riesgo/ratio        |
+//| Motor de Decisión: Evalúa el conteo y asigna riesgo              |
 //+------------------------------------------------------------------+
 STradeParams CRiskManager::GetTradeParams(double balance)
   {
-   STradeParams params = {0.0, 0.0};
-   
    // 1. Conteo Democrático
    int buy_votes = 0;
    int reduce_votes = 0;
@@ -155,25 +142,22 @@ STradeParams CRiskManager::GetTradeParams(double balance)
      
    m_current_level = target_level;
    
-   if(m_current_level == 3)      
-     { 
-      // Nivel Máximo: Riesgo Base + (2 * Incremento)
-      params.risk_amount = balance * ((m_base_risk + (2.0 * m_risk_increment)) / 100.0); 
-      params.take_profit_ratio = m_ratio_3; 
+   STradeParams p;
+   p.risk_amount = 0.0;
+   
+   if(m_current_level == 1)
+     {
+      p.risk_amount = balance * (m_base_risk / 100.0);
      }
-   else if(m_current_level == 2) 
-     { 
-      // Nivel Medio: Riesgo Base + Incremento
-      params.risk_amount = balance * ((m_base_risk + m_risk_increment) / 100.0); 
-      params.take_profit_ratio = m_ratio_2; 
+   else if(m_current_level == 2)
+     {
+      p.risk_amount = balance * ((m_base_risk + m_risk_increment) / 100.0);
      }
-   else if(m_current_level == 1) 
-     { 
-      // Nivel Base: Riesgo Base
-      params.risk_amount = balance * (m_base_risk / 100.0); 
-      params.take_profit_ratio = m_ratio_1; 
+   else if(m_current_level == 3)
+     {
+      p.risk_amount = balance * ((m_base_risk + (m_risk_increment * 2)) / 100.0);
      }
    
-   return params; // Si net_votes no llega al Nivel 1, devuelve {0.0, 0.0} (No operar)
+   return p; // Si net_votes no llega al Nivel 1, devuelve 0.0 (No operar)
   }
 //+------------------------------------------------------------------+

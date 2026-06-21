@@ -28,12 +28,9 @@ input int    InpHysteresis  = 2;   // Histéresis (Tolerancia anti-comisiones)
 input double InpBaseRisk    = 0.5; // Riesgo Base Nivel 1 (%)
 input double InpRiskInc     = 0.5; // Incremento por Nivel (%)
 
-input double InpRatio1      = 2.0; // Ratio TP/SL Nivel 1
-input double InpRatio2      = 3.0; // Ratio TP/SL Nivel 2
-input double InpRatio3      = 4.0; // Ratio TP/SL Nivel 3
 // Filtro de Volatilidad (ATR Ancla en H1)
 input int    InpAtrPeriod = 14;        
-input double InpAtrMultiplier = 1.5;   
+input double InpAtrMultiplier = 3.0;   // Multiplicador ancho (Disaster Stop) para ceder control al Enjambre
 
 // Arquitectura de Sistema
 input int    InpMaxAgentsPerTick = 3;  
@@ -60,7 +57,7 @@ int               AtrHandle; // Ancla nativa de MT5
 // ========================================================================
 int OnInit()
   {
-   GestorRiesgo = new CRiskManager(InpThrBase, InpThrStep, InpHysteresis, InpBaseRisk, InpRiskInc, InpRatio1, InpRatio2, InpRatio3);
+   GestorRiesgo = new CRiskManager(InpThrBase, InpThrStep, InpHysteresis, InpBaseRisk, InpRiskInc);
    Ensamble.InitializeEnsemble();
 
    string path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL5\\Files\\";
@@ -217,9 +214,8 @@ void OnTick()
          if(lot_delta > 0)
            {
             // SCALE-IN
-            double tp_price = ask + (sl_dist * params.take_profit_ratio);
-            if(!Trade.Buy(lot_delta, _Symbol, ask, bid - sl_dist, tp_price, "MultiAgente: Scale-In"))
-               Print("!!! ERROR EN TRADE.BUY: ", GetLastError(), " | SL=", bid - sl_dist, " TP=", tp_price);
+            if(!Trade.Buy(lot_delta, _Symbol, ask, bid - sl_dist, 0, "MultiAgente: Scale-In"))
+               Print("!!! ERROR EN TRADE.BUY: ", GetLastError(), " | SL=", bid - sl_dist);
             else
                Print(">>> SCALE-IN COMPLETADO: ", lot_delta, " lotes.");
            }
@@ -239,8 +235,7 @@ void OnTick()
             
             if(target_lot > 0)
               {
-               double tp_price = ask + (sl_dist * params.take_profit_ratio);
-               if(!Trade.Buy(target_lot, _Symbol, ask, bid - sl_dist, tp_price, "MultiAgente: Scale-Out Sync"))
+               if(!Trade.Buy(target_lot, _Symbol, ask, bid - sl_dist, 0, "MultiAgente: Scale-Out Sync"))
                   Print("!!! ERROR EN RECOMPRA SCALE-OUT: ", GetLastError());
                else
                   Print(">>> RECOMPRA SCALE-OUT COMPLETADA: ", target_lot, " lotes.");
